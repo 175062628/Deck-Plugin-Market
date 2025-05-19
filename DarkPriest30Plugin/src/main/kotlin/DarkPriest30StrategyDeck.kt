@@ -124,9 +124,12 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
          */
         Log(power, playCards, handCards, usableResource, "尝试解场过墙")
         if (rival.playArea.cards.isNotEmpty() && playCards.isNotEmpty() && handCards.isNotEmpty()) {
-            for(rivalPlayCard in rival.playArea.cards){
+            val copyRivalCards = rival.playArea.cards.toMutableList()
+            val copyHandCards = handCards.toMutableList()
+            val copyPlayCards = playCards.toMutableList()
+            for(rivalPlayCard in copyRivalCards){
                 if (rivalPlayCard.isTaunt) {
-                    for (playCard in getBestPlayCardTarget(rivalPlayCard, playCards, handCards, usableResource, power)) {
+                    for (playCard in getBestPlayCardTarget(rivalPlayCard, copyPlayCards, copyHandCards, usableResource, power)) {
                         if (playCard == power) {
                             playCard.action.lClick()?.pointTo(rivalPlayCard)
                         }
@@ -136,20 +139,20 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
                         else{
                             playCard.action.attack(rivalPlayCard)
                         }
-                        usableResource -= playCard.cost
                     }
                 }
             }
         }
         /*
-            优先拍随从
+            优先拍随从，排除433蝙蝠和223战吼
          */
         Log(power, playCards, handCards, usableResource, "尝试使用随从")
         var copyHandCards = handCards.toMutableList()
         for (handCard in copyHandCards) {
-            if (handCard.cardType == CardTypeEnum.MINION && handCard.cost <= me.usableResource) {
+            if (handCard.cardType == CardTypeEnum.MINION
+                && handCard.cost <= me.usableResource
+                && handCard.cardId !in arrayOf("YOD_032", "SW_444")) {
                 handCard.action.power()
-                usableResource -= handCard.cost
             }
         }
         /*
@@ -173,7 +176,7 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
          */
         Log(power, playCards, handCards, usableResource, "尝试使用精神灼烧")
         if (rival.playArea.cards.isNotEmpty() && me.usableResource >= 1) {
-            val lowHealthCards: MutableList<Card> = mutableListOf()
+            val lowHealthCards = MutableCardList()
             for(rivalPlayCard in rival.playArea.cards){
                 if (rivalPlayCard.health <= 2) {
                     lowHealthCards.add(rivalPlayCard)
@@ -184,10 +187,10 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
                 if (lowHealthCards.isEmpty()) {
                     break
                 }
-                if (handCard.cardId == "NX2_019" && me.usableResource >= 1){
+                if (handCard.cardId == "NX2_019" && me.usableResource >= handCard.cost){
                     val firstRivalCard = lowHealthCards.removeFirst()
+                    log.info {"精神灼烧目标卡：$firstRivalCard"}
                     handCard.action.pointTo(firstRivalCard)
-                    usableResource -= handCard.cost
                 }
             }
         }
@@ -203,7 +206,46 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
                 }
                 else {
                     handCard.action.power()
-                    usableResource -= handCard.cost
+                }
+            }
+        }
+        /*
+            判断一遍433蝙蝠和223
+         */
+        Log(power, playCards, handCards, usableResource, "重复一遍上述流程，特判蝙蝠和战吼")
+        copyHandCards = handCards.toMutableList()
+        for (handCard in copyHandCards) {
+            if (handCard.cardType == CardTypeEnum.MINION && handCard.cost <= me.usableResource) {
+                handCard.action.power()
+            }
+        }
+        if (rival.playArea.cards.isNotEmpty() && me.usableResource >= 1) {
+            val lowHealthCards = MutableCardList()
+            for(rivalPlayCard in rival.playArea.cards){
+                if (rivalPlayCard.health <= 2) {
+                    lowHealthCards.add(rivalPlayCard)
+                }
+            }
+            copyHandCards = handCards.toMutableList()
+            for (handCard in copyHandCards) {
+                if (lowHealthCards.isEmpty()) {
+                    break
+                }
+                if (handCard.cardId == "NX2_019" && me.usableResource >= handCard.cost){
+                    val firstRivalCard = lowHealthCards.removeFirst()
+                    log.info {"精神灼烧目标卡：$firstRivalCard"}
+                    handCard.action.pointTo(firstRivalCard)
+                }
+            }
+        }
+        copyHandCards = handCards.toMutableList()
+        for (handCard in copyHandCards) {
+            if (handCard.cost <= me.usableResource) {
+                if (handCard.cardType == CardTypeEnum.LOCATION) {
+                    handCard.action.power()?.pointTo(firstPlayCard)
+                }
+                else {
+                    handCard.action.power()
                 }
             }
         }
@@ -307,14 +349,5 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
         log.info { "我的手牌：$myHandCards" }
         log.info { "我的水晶：$usableResource" }
         log.info { "额外描述：$info" }
-    }
-
-    private fun updateStatus(
-        usableResource: Int,
-        cost: Int
-    ): Triple<MutableCardList, MutableCardList, Int> {
-        val playCards = WAR.me.playArea.cards
-        val handCards = WAR.me.handArea.cards
-        return Triple(playCards, handCards, usableResource - cost)
     }
 }
