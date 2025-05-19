@@ -30,6 +30,6 @@ class DarkPriest30Plugin: DeckPlugin {
     }
 
     override fun homeUrl(): String {
-        return "https://github.com/xjw580/Deck-Plugin-Market/tree/master/Deck-Plugin-Template"
+        return "https://github.com/175062628/Deck-Plugin-Market"
     }
 }

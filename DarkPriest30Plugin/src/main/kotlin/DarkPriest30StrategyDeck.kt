@@ -1,5 +1,6 @@
 import club.xiaojiawei.DeckStrategy
 import club.xiaojiawei.bean.Card
+import club.xiaojiawei.bean.MutableCardList
 import club.xiaojiawei.bean.area.DeckArea
 import club.xiaojiawei.bean.area.HandArea
 import club.xiaojiawei.bean.area.PlayArea
@@ -78,9 +79,9 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
 //            获取战场信息
 
 //            获取我方所有手牌
-        val handCards = me.handArea.cards
+        var handCards = me.handArea.cards
 //            获取我方所有场上的卡牌
-        val playCards = me.playArea.cards
+        var playCards = me.playArea.cards
 //            获取我方英雄
         val hero = me.playArea.hero
 //            获取我方武器
@@ -90,7 +91,7 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
 //            获取我方所有牌库中的卡牌
         val deckCards = me.deckArea.cards
 //            我方当前可用水晶数
-        val usableResource = me.usableResource
+        var usableResource = me.usableResource
 
 //            cardId是游戏写死的，每张牌的cardId都是唯一不变的，如同身份证号码，
         val heroCardId = hero?.cardId
@@ -101,6 +102,7 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
         /*
             使用地标，默认给第一个随从使用
          */
+        Log(power, playCards, handCards, usableResource, "尝试使用地标")
         var firstPlayCard : Card? = null
         if (playCards.isNotEmpty()) {
             for (playCard in playCards) {
@@ -120,13 +122,21 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
         /*
             根据双方场面和自己手牌决策过墙最优解，不考虑536弃牌或435全场睡觉的情况，对一个随从至多只使用一张精神灼烧
          */
+        Log(power, playCards, handCards, usableResource, "尝试解场过墙")
         if (rival.playArea.cards.isNotEmpty() && playCards.isNotEmpty() && handCards.isNotEmpty()) {
             for(rivalPlayCard in rival.playArea.cards){
                 if (rivalPlayCard.isTaunt) {
                     for (playCard in getBestPlayCardTarget(rivalPlayCard, playCards, handCards, usableResource, power)) {
-                        // 我方随从攻击敌方随从
-                        playCard.action.attack(rivalPlayCard)
-                        playCard.clone()
+                        if (playCard == power) {
+                            playCard.action.lClick()?.pointTo(rivalPlayCard)
+                        }
+                        else if (playCard.cardId == "NX2_019") {
+                            playCard.action.pointTo(rivalPlayCard)
+                        }
+                        else{
+                            playCard.action.attack(rivalPlayCard)
+                        }
+                        usableResource -= playCard.cost
                     }
                 }
             }
@@ -134,37 +144,66 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
         /*
             优先拍随从
          */
-        for (handCard in handCards) {
+        Log(power, playCards, handCards, usableResource, "尝试使用随从")
+        var copyHandCards = handCards.toMutableList()
+        for (handCard in copyHandCards) {
             if (handCard.cardType == CardTypeEnum.MINION && handCard.cost <= me.usableResource) {
                 handCard.action.power()
+                usableResource -= handCard.cost
             }
         }
         /*
             到此对面场面不存在墙，若存在则己方随从已攻击完毕
          */
+        Log(power, playCards, handCards, usableResource, "尝试随从打脸")
         for (playCard in playCards) {
-            if (playCard.canAttack()) {
-                playCard.action.attackHero()
-            }
+            playCard.action.attackHero()
         }
         /*
             如果技能没有用来解场，优先放技能
          */
+        Log(power, playCards, handCards, usableResource, "尝试使用技能")
         power?.let{
             if(power.canPower() && power.cost <= me.usableResource){
-                power.action.attackHero()
+                power.action.lClick()?.pointTo(rival.playArea.hero)
+            }
+        }
+        /*
+            再检查是否可以放精神灼烧解场
+         */
+        Log(power, playCards, handCards, usableResource, "尝试使用精神灼烧")
+        if (rival.playArea.cards.isNotEmpty() && me.usableResource >= 1) {
+            val lowHealthCards: MutableList<Card> = mutableListOf()
+            for(rivalPlayCard in rival.playArea.cards){
+                if (rivalPlayCard.health <= 2) {
+                    lowHealthCards.add(rivalPlayCard)
+                }
+            }
+            copyHandCards = handCards.toMutableList()
+            for (handCard in copyHandCards) {
+                if (lowHealthCards.isEmpty()) {
+                    break
+                }
+                if (handCard.cardId == "NX2_019" && me.usableResource >= 1){
+                    val firstRivalCard = lowHealthCards.removeFirst()
+                    handCard.action.pointTo(firstRivalCard)
+                    usableResource -= handCard.cost
+                }
             }
         }
         /*
             最后拍打脸法术和地标
          */
-        for (handCard in handCards) {
+        Log(power, playCards, handCards, usableResource, "尝试法术打脸")
+        copyHandCards = handCards.toMutableList()
+        for (handCard in copyHandCards) {
             if (handCard.cost <= me.usableResource) {
                 if (handCard.cardType == CardTypeEnum.LOCATION) {
                     handCard.action.power()?.pointTo(firstPlayCard)
                 }
                 else {
                     handCard.action.power()
+                    usableResource -= handCard.cost
                 }
             }
         }
@@ -184,8 +223,8 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
         myHandCards: MutableList<Card>,
         usableResource: Int,
         power: Card?
-    ): MutableList<Card> {
-        var res = mutableListOf<Card>()
+    ): MutableCardList {
+        val res = MutableCardList()
         var currentResource = usableResource
         var useSpell: Card? = null
         var rivalPlayCardHealth = rivalPlayCard.health
@@ -260,5 +299,22 @@ class DarkPriest30StrategyDeck : DeckStrategy() {
         val cards: MutableList<Card> = cards.toMutableList()
 
         override fun compareTo(other: DPEntity): Int = this.damage.compareTo(other.damage)
+    }
+
+    private fun Log(power: Card?, myPlayCards: MutableCardList, myHandCards: MutableCardList, usableResource: Int, info: String?) {
+        log.info { "当前技能：$power" }
+        log.info { "我的场面：$myPlayCards" }
+        log.info { "我的手牌：$myHandCards" }
+        log.info { "我的水晶：$usableResource" }
+        log.info { "额外描述：$info" }
+    }
+
+    private fun updateStatus(
+        usableResource: Int,
+        cost: Int
+    ): Triple<MutableCardList, MutableCardList, Int> {
+        val playCards = WAR.me.playArea.cards
+        val handCards = WAR.me.handArea.cards
+        return Triple(playCards, handCards, usableResource - cost)
     }
 }
